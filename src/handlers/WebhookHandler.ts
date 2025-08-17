@@ -23,21 +23,47 @@ export class WebhookHandler {
     try {
       this.logger.webhookReceived('WhaTicket', 'message', { requestId });
       
-      // 🛡️ 1. Validar assinatura do webhook (se configurado)
-      if (config.webhook.secret !== 'default-secret-change-in-production') {
-        const isValid = this.validateWebhookSignature(req);
-        if (!isValid) {
-          this.logger.warn('Webhook com assinatura inválida rejeitado', { requestId });
-          res.status(401).json({ error: 'Invalid signature' });
-          return;
+      // 🛡️ 1. Validar assinatura do webhook (opcional - mais flexível para Whaticket)
+      if (config.webhook.secret && config.webhook.secret !== 'default-secret-change-in-production') {
+        // Só valida assinatura se o header estiver presente
+        const signature = req.headers['x-signature'] || req.headers['signature'];
+        if (signature) {
+          const isValid = this.validateWebhookSignature(req);
+          if (!isValid) {
+            this.logger.warn('Webhook com assinatura inválida rejeitado', { requestId, signature });
+            res.status(401).json({ error: 'Invalid signature' });
+            return;
+          }
+          this.logger.debug('Webhook com assinatura válida', { requestId });
+        } else {
+          this.logger.debug('Webhook sem assinatura - permitindo (Whaticket)', { requestId });
         }
+      } else {
+        this.logger.debug('Validação de assinatura desabilitada', { requestId });
       }
       
-      // 📝 2. Validar estrutura do payload
+      // 📝 2. Validar estrutura do payload com logs detalhados
+      this.logger.debug('Payload recebido do webhook', { 
+        requestId, 
+        payload: JSON.stringify(req.body, null, 2),
+        headers: req.headers
+      });
+      
       const webhookData = this.validateWebhookPayload(req.body);
       if (!webhookData) {
-        this.logger.warn('Webhook com payload inválido rejeitado', { requestId });
-        res.status(400).json({ error: 'Invalid payload' });
+        this.logger.warn('Webhook com payload inválido rejeitado', { 
+          requestId, 
+          payload: req.body,
+          payloadType: typeof req.body,
+          payloadKeys: Object.keys(req.body || {})
+        });
+        res.status(400).json({ 
+          error: 'Invalid payload', 
+          debug: {
+            receivedKeys: Object.keys(req.body || {}),
+            expectedFormat: 'Whaticket webhook format'
+          }
+        });
         return;
       }
       
@@ -109,25 +135,54 @@ export class WebhookHandler {
     }
   }
   
-  // ✅ Validar payload do webhook
+  // ✅ Validar payload do webhook - mais tolerante a diferentes formatos
   private validateWebhookPayload(body: any): WhaTicketWebhook | null {
     try {
-      return schemas.whaTicketWebhook.parse(body);
+      // Tentar validação normal primeiro
+      const result = schemas.whaTicketWebhook.safeParse(body);
+      if (result.success) {
+        return result.data;
+      }
+      
+      // Se falhar, logar detalhes do erro e tentar estratégias de fallback
+      this.logger.warn('Validação inicial falhou, tentando fallbacks', {
+        error: result.error.errors,
+        receivedData: body
+      });
+      
+      // Fallback: aceitar qualquer objeto que tenha pelo menos message ou event
+      if (body && (body.message || body.event || body.ticket)) {
+        this.logger.info('Usando fallback - aceitar payload parcial do Whaticket');
+        return body as WhaTicketWebhook;
+      }
+      
+      return null;
     } catch (error) {
-      this.logger.error('Payload do webhook inválido', error);
+      this.logger.error('Erro na validação do payload do webhook', error, {
+        payload: body,
+        payloadType: typeof body
+      });
       return null;
     }
   }
   
-  // 🎯 Verificar se deve processar a mensagem
+  // 🎯 Verificar se deve processar a mensagem - mais flexível
   private shouldProcessMessage(webhookData: WhaTicketWebhook): boolean {
-    // Processar apenas mensagens de texto que não são nossas
-    return !!(
-      webhookData.message &&
-      webhookData.message.body &&
-      !webhookData.message.fromMe &&
-      webhookData.message.body.trim().length > 0
-    );
+    // Mais tolerante: processar se tiver message.body (fromMe pode ser undefined)
+    if (webhookData.message?.body && webhookData.message.body.trim().length > 0) {
+      // Se fromMe está definido, só processar se não for nossa mensagem
+      if (webhookData.message.fromMe !== undefined && webhookData.message.fromMe === true) {
+        return false;
+      }
+      return true;
+    }
+    
+    // Processar também eventos específicos do Whaticket mesmo sem mensagem
+    if (webhookData.event && ['message', 'message:new', 'message:received'].includes(webhookData.event)) {
+      return true;
+    }
+    
+    return false;
   }
   
   // 🔄 Verificar mensagem duplicada
@@ -137,42 +192,59 @@ export class WebhookHandler {
     return cached.hit;
   }
   
-  // ⚡ Processar mensagem de forma assíncrona
+  // ⚡ Processar mensagem de forma assíncrona - mais resiliente
   private async processMessageAsync(webhookData: WhaTicketWebhook, requestId: string): Promise<void> {
     const startTime = Date.now();
     
     try {
-      if (!webhookData.message || !webhookData.ticket) {
-        throw new Error('Dados da mensagem ou ticket ausentes');
-      }
-      
+      // Mais flexível: tentar extrair dados mesmo que parciais
       const message = webhookData.message;
       const ticket = webhookData.ticket;
       
+      // Verificar se temos dados mínimos necessários
+      if (!message?.body && !webhookData.event) {
+        throw new Error('Dados insuficientes: sem message.body ou event');
+      }
+      
+      // Usar dados padrão se ticket não estiver disponível
+      const safeTicket = ticket || {
+        id: Date.now(),
+        contact: {
+          number: 'unknown',
+          name: 'Usuario Desconhecido'
+        },
+        whatsapp: {
+          id: 1,
+          name: 'WhatsApp'
+        }
+      };
+      
       // 🆔 Identificar usuário único
-      const userId = this.extractUserId(ticket);
+      const userId = this.extractUserId(safeTicket);
       
       this.logger.info('Processando mensagem do cliente', {
         requestId,
         userId,
-        messageId: message.id,
-        contactNumber: ticket.contact.number,
-        messageLength: message.body.length
+        messageId: message?.id || 'unknown',
+        contactNumber: safeTicket.contact?.number || 'unknown',
+        messageLength: message?.body?.length || 0
       });
       
       // 🤖 Processar com OpenAI Assistant
+      const messageBody = message?.body || `Evento: ${webhookData.event}`;
       const response = await this.openaiService.processMessage(
-        message.body,
+        messageBody,
         userId,
         {
           sessionId: requestId,
           userId,
           metadata: {
             source: 'whaticket',
-            messageId: message.id,
-            contactNumber: ticket.contact.number,
-            contactName: ticket.contact.name,
-            whatsappId: ticket.whatsapp.id
+            messageId: message?.id || 'unknown',
+            contactNumber: safeTicket.contact?.number || 'unknown',
+            contactName: safeTicket.contact?.name || 'Usuario',
+            whatsappId: safeTicket.whatsapp?.id || 1,
+            event: webhookData.event
           }
         }
       );
@@ -180,13 +252,14 @@ export class WebhookHandler {
       // 📤 Enviar resposta se processamento foi bem-sucedido
       if (response.success && response.response) {
         await this.sendResponseToWhatsApp(
-          ticket,
+          safeTicket,
           response.response,
           requestId
         );
         
         // 💾 Cachear para evitar duplicação
-        const cacheKey = CacheKeys.webhookResponse(message.id);
+        const messageId = message?.id || requestId;
+        const cacheKey = CacheKeys.webhookResponse(messageId);
         await cacheService.set(cacheKey, { 
           processed: true, 
           requestId,
@@ -201,7 +274,7 @@ export class WebhookHandler {
         });
         
         // Enviar mensagem de erro amigável
-        await this.sendErrorResponse(ticket, requestId);
+        await this.sendErrorResponse(safeTicket, requestId);
       }
       
       const duration = Date.now() - startTime;
@@ -226,31 +299,52 @@ export class WebhookHandler {
     }
   }
   
-  // 🆔 Extrair ID único do usuário
+  // 🆔 Extrair ID único do usuário - mais resiliente
   private extractUserId(ticket: any): string {
-    // Usar número do WhatsApp como identificador único
-    const number = ticket.contact.number.replace(/\D/g, '');
-    return `whatsapp_${number}`;
+    // Tentar diferentes estratégias para extrair identificador único
+    try {
+      if (ticket?.contact?.number) {
+        const number = ticket.contact.number.replace(/\D/g, '');
+        return `whatsapp_${number}`;
+      }
+      
+      if (ticket?.id) {
+        return `ticket_${ticket.id}`;
+      }
+      
+      // Fallback para usuário genérico
+      return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    } catch (error) {
+      this.logger.warn('Erro ao extrair userId, usando fallback', { ticket, error });
+      return `fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
   }
   
-  // 📤 Enviar resposta para WhatsApp via API NTWeb
+  // 📤 Enviar resposta para WhatsApp via API do Whaticket - mais resiliente
   private async sendResponseToWhatsApp(
     ticket: any,
     responseText: string,
     requestId: string
   ): Promise<void> {
     try {
-      // Usar a API real da NTWeb para envio de mensagens
+      // Usar a API do Whaticket para envio de mensagens
       const axios = require('axios');
       
+      // Extrair número de contato de forma mais resiliente
+      const contactNumber = ticket?.contact?.number || 'unknown';
+      if (contactNumber === 'unknown') {
+        this.logger.warn('Número de contato não disponível, não é possível enviar resposta', { requestId, ticket });
+        return;
+      }
+      
       const payload = {
-        number: ticket.contact.number,
+        number: contactNumber,
         body: responseText
       };
       
-      this.logger.info('Enviando resposta para WhatsApp via NTWeb API', {
+      this.logger.info('Enviando resposta para WhatsApp via API Whaticket', {
         requestId,
-        contactNumber: ticket.contact.number,
+        contactNumber,
         responseLength: responseText.length
       });
       
@@ -265,7 +359,7 @@ export class WebhookHandler {
       if (response.status === 200 || response.status === 201) {
         this.logger.info('✅ Resposta enviada com sucesso para WhatsApp', {
           requestId,
-          contactNumber: ticket.contact.number,
+          contactNumber,
           messageId: response.data?.messageId || 'unknown',
           responseLength: responseText.length
         });
@@ -276,7 +370,7 @@ export class WebhookHandler {
     } catch (error) {
       this.logger.error('❌ Erro ao enviar resposta para WhatsApp', error, {
         requestId,
-        contactNumber: ticket.contact?.number,
+        contactNumber: ticket?.contact?.number || 'unknown',
         apiEndpoint: 'https://api-atendimento.ntweb.com.br/api/messages/send',
         errorMessage: error.message,
         errorResponse: error.response?.data

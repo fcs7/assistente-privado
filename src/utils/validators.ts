@@ -49,29 +49,29 @@ export const whmcsTicketCreateSchema = z.object({
   department: z.string().optional()
 });
 
-// WhatsApp Schemas
+// WhatsApp Schemas - Flexibilizado para aceitar diferentes formatos do Whaticket
 export const whaTicketWebhookSchema = z.object({
-  event: z.string(),
+  event: z.string().optional(),
   ticket: z.object({
-    id: z.number(),
+    id: z.number().optional(),
     contact: z.object({
-      number: z.string(),
-      name: z.string()
-    }),
+      number: z.string().optional(),
+      name: z.string().optional()
+    }).optional(),
     whatsapp: z.object({
-      id: z.number(),
-      name: z.string()
-    })
+      id: z.number().optional(),
+      name: z.string().optional()
+    }).optional()
   }).optional(),
   message: z.object({
-    id: z.string(),
-    body: z.string(),
-    fromMe: z.boolean(),
+    id: z.string().optional(),
+    body: z.string().optional(),
+    fromMe: z.boolean().optional(),
     mediaType: z.string().optional(),
     mediaUrl: z.string().optional(),
-    timestamp: z.number()
+    timestamp: z.number().optional()
   }).optional()
-});
+}).passthrough(); // Permite campos adicionais não definidos no schema
 
 // Function Parameter Schemas
 export const getClientInvoicesSchema = z.object({

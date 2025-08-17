@@ -61,6 +61,83 @@ app.get('/health', async (req, res) => {
 // 📱 Webhook Principal
 app.post('/webhook', webhookHandler.handle.bind(webhookHandler));
 
+// 🧪 Endpoint de teste para simular webhooks do Whaticket
+app.post('/webhook/test', async (req, res) => {
+  try {
+    logger.info('🧪 Teste de webhook iniciado', {
+      payload: req.body,
+      headers: req.headers
+    });
+
+    // Simular payload típico do Whaticket se não fornecido
+    const testPayload = req.body && Object.keys(req.body).length > 0 ? req.body : {
+      event: 'message',
+      ticket: {
+        id: 123,
+        contact: {
+          number: '5511999999999',
+          name: 'Teste Usuario'
+        },
+        whatsapp: {
+          id: 1,
+          name: 'WhatsApp Instance'
+        }
+      },
+      message: {
+        id: 'test_msg_' + Date.now(),
+        body: 'Olá, esta é uma mensagem de teste para o assistente WHMCS!',
+        fromMe: false,
+        timestamp: Date.now()
+      }
+    };
+
+    // Criar nova requisição simulada
+    const simulatedReq = {
+      ...req,
+      body: testPayload,
+      requestId: `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    };
+
+    // Processar com o webhook handler
+    await webhookHandler.handle(simulatedReq as any, res);
+    
+  } catch (error) {
+    logger.error('Erro no teste de webhook', error);
+    res.status(500).json({
+      error: 'Test webhook failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// 📊 Status do webhook para debugging
+app.get('/webhook/status', async (req, res) => {
+  try {
+    const health = await webhookHandler.healthCheck();
+    
+    res.json({
+      webhook: {
+        status: 'active',
+        endpoint: '/webhook',
+        testEndpoint: '/webhook/test'
+      },
+      health,
+      config: {
+        webhookSecret: !!config.webhook.secret && config.webhook.secret !== 'default-secret-change-in-production',
+        whaticketUrl: config.whaticket.url,
+        whaticketToken: !!config.whaticket.token
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Erro ao obter status do webhook', error);
+    res.status(500).json({
+      error: 'Failed to get webhook status',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // 📊 Status das Funções
 app.get('/functions', (req, res) => {
   res.json({
@@ -115,6 +192,8 @@ app.use('*', (req, res) => {
     available: [
       'GET /health',
       'POST /webhook',
+      'POST /webhook/test',
+      'GET /webhook/status',
       'GET /functions',
       'POST /test-function/:name (dev only)',
       'GET /logs (dev only)'
