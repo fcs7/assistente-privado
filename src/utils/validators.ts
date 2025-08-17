@@ -49,7 +49,34 @@ export const whmcsTicketCreateSchema = z.object({
   department: z.string().optional()
 });
 
-// WhatsApp Schemas - Flexibilizado para aceitar diferentes formatos do Whaticket
+// WhatsApp Schemas - Formato REAL do Whaticket descoberto
+export const whaticketRealWebhookSchema = z.object({
+  filaescolhida: z.string().optional(),        // Nome da fila (ex: "Geral")
+  filaescolhidaid: z.number().optional(),      // ID da fila (ex: 1)
+  mensagem: z.string().optional(),             // Conteúdo da mensagem
+  sender: z.string().optional(),               // Número do remetente (ex: "5511989091838")
+  chamadoId: z.number().optional(),            // ID do chamado/ticket
+  acao: z.string().optional(),                 // Ação (ex: "start")
+  name: z.string().optional(),                 // Nome do contato
+  companyId: z.number().optional(),            // ID da empresa
+  defaultWhatsapp_x: z.number().optional(),    // ID do WhatsApp
+  fromMe: z.boolean().optional(),              // Se é mensagem nossa
+  queueId: z.number().optional(),              // ID da fila
+  isGroup: z.boolean().optional(),             // Se é grupo
+  ticketData: z.object({
+    id: z.number().optional(),
+    status: z.string().optional(),
+    unreadMessages: z.number().optional(),
+    lastMessage: z.string().optional(),
+    contact: z.object({
+      id: z.number().optional(),
+      name: z.string().optional(),
+      number: z.string().optional()
+    }).optional()
+  }).optional()
+}).passthrough();
+
+// Schema antigo mantido para compatibilidade
 export const whaTicketWebhookSchema = z.object({
   event: z.string().optional(),
   ticket: z.object({
@@ -71,7 +98,7 @@ export const whaTicketWebhookSchema = z.object({
     mediaUrl: z.string().optional(),
     timestamp: z.number().optional()
   }).optional()
-}).passthrough(); // Permite campos adicionais não definidos no schema
+}).passthrough();
 
 // Function Parameter Schemas
 export const getClientInvoicesSchema = z.object({
@@ -260,6 +287,7 @@ export const schemas = {
   whmcsServiceFilters: whmcsServiceFiltersSchema,
   whmcsTicketCreate: whmcsTicketCreateSchema,
   whaTicketWebhook: whaTicketWebhookSchema,
+  whaticketRealWebhook: whaticketRealWebhookSchema,
   getClientInvoices: getClientInvoicesSchema,
   checkServiceStatus: checkServiceStatusSchema,
   createTicket: createTicketSchema

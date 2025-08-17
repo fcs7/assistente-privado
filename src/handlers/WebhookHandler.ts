@@ -43,10 +43,18 @@ export class WebhookHandler {
       }
       
       // 📝 2. Validar estrutura do payload com logs detalhados
-      this.logger.debug('Payload recebido do webhook', { 
+      this.logger.info('🔍 PAYLOAD COMPLETO RECEBIDO DO WHATICKET:', { 
         requestId, 
         payload: JSON.stringify(req.body, null, 2),
-        headers: req.headers
+        payloadKeys: Object.keys(req.body || {}),
+        hasTicket: !!req.body?.ticket,
+        hasMessage: !!req.body?.message,
+        hasEvent: !!req.body?.event,
+        headers: {
+          'content-type': req.headers['content-type'],
+          'user-agent': req.headers['user-agent'],
+          'x-signature': req.headers['x-signature']
+        }
       });
       
       const webhookData = this.validateWebhookPayload(req.body);
@@ -135,24 +143,43 @@ export class WebhookHandler {
     }
   }
   
-  // ✅ Validar payload do webhook - mais tolerante a diferentes formatos
+  // ✅ Validar payload do webhook - suporte ao formato REAL do Whaticket
   private validateWebhookPayload(body: any): WhaTicketWebhook | null {
     try {
-      // Tentar validação normal primeiro
-      const result = schemas.whaTicketWebhook.safeParse(body);
-      if (result.success) {
-        return result.data;
+      // 1. Tentar validação com formato REAL do Whaticket primeiro
+      const realFormatResult = schemas.whaticketRealWebhook.safeParse(body);
+      if (realFormatResult.success) {
+        this.logger.info('✅ Payload validado com formato REAL do Whaticket', {
+          filaescolhida: body.filaescolhida,
+          sender: body.sender,
+          mensagem: body.mensagem?.substring(0, 50) + '...'
+        });
+        return realFormatResult.data as any;
       }
       
-      // Se falhar, logar detalhes do erro e tentar estratégias de fallback
-      this.logger.warn('Validação inicial falhou, tentando fallbacks', {
-        error: result.error.errors,
-        receivedData: body
+      // 2. Tentar validação com formato antigo (compatibilidade)
+      const oldFormatResult = schemas.whaTicketWebhook.safeParse(body);
+      if (oldFormatResult.success) {
+        this.logger.info('✅ Payload validado com formato ANTIGO do Whaticket');
+        return oldFormatResult.data;
+      }
+      
+      // 3. Log detalhado dos erros e tentar fallback inteligente
+      this.logger.warn('Ambas validações falharam, analisando payload', {
+        realFormatErrors: realFormatResult.error.errors,
+        oldFormatErrors: oldFormatResult.error.errors,
+        receivedKeys: Object.keys(body || {})
       });
       
-      // Fallback: aceitar qualquer objeto que tenha pelo menos message ou event
+      // 4. Fallback inteligente: aceitar se tiver campos do Whaticket
+      if (body && (body.sender || body.mensagem || body.chamadoId || body.filaescolhida)) {
+        this.logger.info('✅ Usando fallback para formato Whaticket real');
+        return body as any;
+      }
+      
+      // 5. Fallback antigo mantido
       if (body && (body.message || body.event || body.ticket)) {
-        this.logger.info('Usando fallback - aceitar payload parcial do Whaticket');
+        this.logger.info('✅ Usando fallback para formato antigo');
         return body as WhaTicketWebhook;
       }
       
@@ -166,19 +193,38 @@ export class WebhookHandler {
     }
   }
   
-  // 🎯 Verificar se deve processar a mensagem - mais flexível
-  private shouldProcessMessage(webhookData: WhaTicketWebhook): boolean {
-    // Mais tolerante: processar se tiver message.body (fromMe pode ser undefined)
-    if (webhookData.message?.body && webhookData.message.body.trim().length > 0) {
+  // 🎯 Verificar se deve processar a mensagem - formato REAL do Whaticket
+  private shouldProcessMessage(webhookData: any): boolean {
+    // Formato REAL do Whaticket: usar campo 'mensagem'
+    if (webhookData.mensagem && webhookData.mensagem.trim().length > 0) {
       // Se fromMe está definido, só processar se não for nossa mensagem
-      if (webhookData.message.fromMe !== undefined && webhookData.message.fromMe === true) {
+      if (webhookData.fromMe === true) {
         return false;
       }
+      this.logger.debug('✅ Mensagem do formato Whaticket real será processada', {
+        mensagem: webhookData.mensagem.substring(0, 50),
+        sender: webhookData.sender,
+        fila: webhookData.filaescolhida
+      });
       return true;
     }
     
-    // Processar também eventos específicos do Whaticket mesmo sem mensagem
+    // Formato antigo: usar message.body (compatibilidade)
+    if (webhookData.message?.body && webhookData.message.body.trim().length > 0) {
+      if (webhookData.message.fromMe === true) {
+        return false;
+      }
+      this.logger.debug('✅ Mensagem do formato antigo será processada');
+      return true;
+    }
+    
+    // Processar também eventos específicos
     if (webhookData.event && ['message', 'message:new', 'message:received'].includes(webhookData.event)) {
+      return true;
+    }
+    
+    // Processar ações do Whaticket
+    if (webhookData.acao && ['start', 'message'].includes(webhookData.acao)) {
       return true;
     }
     
@@ -201,37 +247,46 @@ export class WebhookHandler {
       const message = webhookData.message;
       const ticket = webhookData.ticket;
       
-      // Verificar se temos dados mínimos necessários
-      if (!message?.body && !webhookData.event) {
-        throw new Error('Dados insuficientes: sem message.body ou event');
-      }
-      
-      // Usar dados padrão se ticket não estiver disponível
-      const safeTicket = ticket || {
-        id: Date.now(),
-        contact: {
-          number: 'unknown',
-          name: 'Usuario Desconhecido'
-        },
-        whatsapp: {
-          id: 1,
-          name: 'WhatsApp'
-        }
-      };
-      
-      // 🆔 Identificar usuário único
-      const userId = this.extractUserId(safeTicket);
-      
-      this.logger.info('Processando mensagem do cliente', {
+      this.logger.info('🔍 ANALISANDO DADOS DO WEBHOOK (FORMATO REAL):', {
         requestId,
-        userId,
-        messageId: message?.id || 'unknown',
-        contactNumber: safeTicket.contact?.number || 'unknown',
-        messageLength: message?.body?.length || 0
+        // Formato REAL do Whaticket
+        sender: webhookData.sender,
+        mensagem: webhookData.mensagem?.substring(0, 100),
+        chamadoId: webhookData.chamadoId,
+        filaescolhida: webhookData.filaescolhida,
+        filaescolhidaid: webhookData.filaescolhidaid,
+        name: webhookData.name,
+        fromMe: webhookData.fromMe,
+        // Formato antigo (compatibilidade)
+        originalMessage: message,
+        originalTicket: ticket,
+        webhookEvent: webhookData.event
       });
       
-      // 🤖 Processar com OpenAI Assistant
-      const messageBody = message?.body || `Evento: ${webhookData.event}`;
+      // Verificar dados mínimos - formato REAL do Whaticket
+      if (!webhookData.mensagem && !message?.body && !webhookData.event && !webhookData.acao) {
+        throw new Error('Dados insuficientes: sem mensagem, message.body, event ou acao');
+      }
+      
+      // 🆔 Identificar usuário único (usando dados diretos do webhook)
+      const userId = this.extractUserId(webhookData);
+      
+      this.logger.info('Processando mensagem do cliente (FORMATO REAL)', {
+        requestId,
+        userId,
+        // Dados do formato REAL do Whaticket
+        sender: webhookData.sender,
+        chamadoId: webhookData.chamadoId,
+        messageLength: webhookData.mensagem?.length || message?.body?.length || 0,
+        fila: webhookData.filaescolhida,
+        filaId: webhookData.filaescolhidaid
+      });
+      
+      // 🤖 Processar com OpenAI Assistant - usar dados corretos
+      const messageBody = webhookData.mensagem || message?.body || `Evento: ${webhookData.event || webhookData.acao}`;
+      const contactNumber = webhookData.sender || webhookData.ticketData?.contact?.number || ticket?.contact?.number || 'unknown';
+      const contactName = webhookData.name || webhookData.ticketData?.contact?.name || ticket?.contact?.name || 'Usuario';
+      
       const response = await this.openaiService.processMessage(
         messageBody,
         userId,
@@ -240,19 +295,34 @@ export class WebhookHandler {
           userId,
           metadata: {
             source: 'whaticket',
-            messageId: message?.id || 'unknown',
-            contactNumber: safeTicket.contact?.number || 'unknown',
-            contactName: safeTicket.contact?.name || 'Usuario',
-            whatsappId: safeTicket.whatsapp?.id || 1,
-            event: webhookData.event
+            // Dados do formato REAL
+            messageId: webhookData.chamadoId?.toString() || message?.id || 'unknown',
+            contactNumber,
+            contactName,
+            whatsappId: String(webhookData.defaultWhatsapp_x || webhookData.ticketData?.whatsapp?.id || 1),
+            queueName: webhookData.filaescolhida || 'Geral',
+            queueId: String(webhookData.filaescolhidaid || webhookData.queueId || 1),
+            companyId: String(webhookData.companyId || 1),
+            ticketStatus: webhookData.ticketData?.status || 'pending',
+            event: webhookData.event || webhookData.acao || 'message'
           }
         }
       );
       
       // 📤 Enviar resposta se processamento foi bem-sucedido
       if (response.success && response.response) {
+        // Criar objeto de resposta com dados do formato REAL do Whaticket
+        const responseData = {
+          contactNumber,
+          contactName,
+          chamadoId: webhookData.chamadoId,
+          filaescolhida: webhookData.filaescolhida,
+          // Manter compatibilidade com formato antigo
+          ticketData: webhookData.ticketData || ticket
+        };
+        
         await this.sendResponseToWhatsApp(
-          safeTicket,
+          responseData,
           response.response,
           requestId
         );
@@ -274,7 +344,12 @@ export class WebhookHandler {
         });
         
         // Enviar mensagem de erro amigável
-        await this.sendErrorResponse(safeTicket, requestId);
+        const errorResponseData = {
+          contactNumber,
+          contactName,
+          chamadoId: webhookData.chamadoId
+        };
+        await this.sendErrorResponse(errorResponseData, requestId);
       }
       
       const duration = Date.now() - startTime;
@@ -293,36 +368,75 @@ export class WebhookHandler {
       });
       
       // Tentar enviar mensagem de erro genérica
-      if (webhookData.ticket) {
-        await this.sendErrorResponse(webhookData.ticket, requestId);
-      }
+      const errorData = {
+        contactNumber: webhookData.sender || webhookData.ticketData?.contact?.number || 'unknown',
+        contactName: webhookData.name || webhookData.ticketData?.contact?.name || 'Usuario',
+        chamadoId: webhookData.chamadoId
+      };
+      await this.sendErrorResponse(errorData, requestId);
     }
   }
   
-  // 🆔 Extrair ID único do usuário - mais resiliente
-  private extractUserId(ticket: any): string {
-    // Tentar diferentes estratégias para extrair identificador único
+  // 🆔 Extrair ID único do usuário - formato REAL do Whaticket
+  private extractUserId(webhookData: any): string {
     try {
-      if (ticket?.contact?.number) {
-        const number = ticket.contact.number.replace(/\D/g, '');
+      // 1. Formato REAL do Whaticket: usar campo 'sender'
+      if (webhookData.sender) {
+        const number = webhookData.sender.replace(/\D/g, '');
+        this.logger.debug('✅ UserId extraído do campo sender', { sender: webhookData.sender, userId: `whatsapp_${number}` });
         return `whatsapp_${number}`;
       }
       
-      if (ticket?.id) {
-        return `ticket_${ticket.id}`;
+      // 2. Formato antigo: usar ticket.contact.number
+      if (webhookData.ticket?.contact?.number) {
+        const number = webhookData.ticket.contact.number.replace(/\D/g, '');
+        this.logger.debug('✅ UserId extraído do formato antigo', { number, userId: `whatsapp_${number}` });
+        return `whatsapp_${number}`;
       }
       
-      // Fallback para usuário genérico
-      return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // 3. Usar ticketData.contact.number (formato misto)
+      if (webhookData.ticketData?.contact?.number) {
+        const number = webhookData.ticketData.contact.number.replace(/\D/g, '');
+        this.logger.debug('✅ UserId extraído do ticketData', { number, userId: `whatsapp_${number}` });
+        return `whatsapp_${number}`;
+      }
+      
+      // 4. Usar chamadoId como fallback
+      if (webhookData.chamadoId) {
+        const userId = `ticket_${webhookData.chamadoId}`;
+        this.logger.debug('✅ UserId extraído do chamadoId', { chamadoId: webhookData.chamadoId, userId });
+        return userId;
+      }
+      
+      // 5. Usar ticket.id
+      if (webhookData.ticket?.id) {
+        const userId = `ticket_${webhookData.ticket.id}`;
+        this.logger.debug('✅ UserId extraído do ticket.id', { ticketId: webhookData.ticket.id, userId });
+        return userId;
+      }
+      
+      // 6. Fallback para usuário genérico
+      const fallbackId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      this.logger.warn('⚠️ Nenhum identificador encontrado, usando fallback', { 
+        availableFields: Object.keys(webhookData || {}),
+        fallbackId 
+      });
+      return fallbackId;
+      
     } catch (error) {
-      this.logger.warn('Erro ao extrair userId, usando fallback', { ticket, error });
-      return `fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const errorFallback = `error_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      this.logger.error('❌ Erro ao extrair userId, usando fallback de erro', { 
+        webhookData, 
+        error, 
+        errorFallback 
+      });
+      return errorFallback;
     }
   }
   
-  // 📤 Enviar resposta para WhatsApp via API do Whaticket - mais resiliente
+  // 📤 Enviar resposta para WhatsApp via API do Whaticket - formato REAL
   private async sendResponseToWhatsApp(
-    ticket: any,
+    responseData: any,
     responseText: string,
     requestId: string
   ): Promise<void> {
@@ -330,10 +444,18 @@ export class WebhookHandler {
       // Usar a API do Whaticket para envio de mensagens
       const axios = require('axios');
       
-      // Extrair número de contato de forma mais resiliente
-      const contactNumber = ticket?.contact?.number || 'unknown';
+      // Extrair número de contato do formato REAL ou antigo
+      const contactNumber = responseData.contactNumber || 
+                           responseData.contact?.number || 
+                           responseData.ticketData?.contact?.number || 
+                           'unknown';
+      
       if (contactNumber === 'unknown') {
-        this.logger.warn('Número de contato não disponível, não é possível enviar resposta', { requestId, ticket });
+        this.logger.warn('❌ Número de contato não disponível, não é possível enviar resposta', { 
+          requestId, 
+          responseData,
+          availableFields: Object.keys(responseData || {})
+        });
         return;
       }
       
@@ -380,7 +502,7 @@ export class WebhookHandler {
   }
   
   // ❌ Enviar mensagem de erro amigável
-  private async sendErrorResponse(ticket: any, requestId: string): Promise<void> {
+  private async sendErrorResponse(responseData: any, requestId: string): Promise<void> {
     const errorMessage = `🤖 Olá! Sou seu assistente virtual WHMCS.\n\n` +
       `❌ Desculpe, encontrei um problema técnico ao processar sua mensagem.\n\n` +
       `🔄 Tente novamente em alguns minutos ou entre em contato com nosso suporte:\n` +
@@ -389,7 +511,7 @@ export class WebhookHandler {
       `🆔 Ref: ${requestId}`;
     
     try {
-      await this.sendResponseToWhatsApp(ticket, errorMessage, requestId);
+      await this.sendResponseToWhatsApp(responseData, errorMessage, requestId);
     } catch (error) {
       this.logger.error('Erro ao enviar mensagem de erro', error, { requestId });
     }
