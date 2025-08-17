@@ -58,8 +58,69 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// 📱 Webhook Principal
-app.post('/webhook', webhookHandler.handle.bind(webhookHandler));
+// 🔍 Webhook DEBUG - Aceita TODOS os métodos HTTP
+app.all('/webhook', (req, res, next) => {
+  console.log('\n\n========================================');
+  console.log('🔍 WEBHOOK DEBUG - REQUISIÇÃO RECEBIDA');
+  console.log('========================================');
+  console.log('📅 Timestamp:', new Date().toISOString());
+  console.log('🔤 Method:', req.method);
+  console.log('🔗 URL:', req.url);
+  console.log('🔗 Original URL:', req.originalUrl);
+  console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+  
+  // Se for GET, retorna sucesso para teste de conectividade
+  if (req.method === 'GET') {
+    console.log('✅ GET request - Teste de conectividade do Whaticket');
+    console.log('========================================\n\n');
+    return res.json({ 
+      status: 'ok', 
+      message: 'Webhook ativo e funcionando',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  console.log('📦 Body Type:', typeof req.body);
+  console.log('📦 Body Keys:', Object.keys(req.body || {}));
+  console.log('📦 Body Content:', JSON.stringify(req.body, null, 2));
+  
+  // Log específico para campos importantes
+  if (req.body) {
+    console.log('\n🎯 CAMPOS ESPECÍFICOS:');
+    console.log('- sender:', req.body.sender);
+    console.log('- mensagem:', req.body.mensagem);
+    console.log('- message:', req.body.message);
+    console.log('- body:', req.body.body);
+    console.log('- text:', req.body.text);
+    console.log('- content:', req.body.content);
+    console.log('- filaescolhida:', req.body.filaescolhida);
+    console.log('- queue:', req.body.queue);
+    console.log('- fila:', req.body.fila);
+    console.log('- chamadoId:', req.body.chamadoId);
+    console.log('- ticketId:', req.body.ticketId);
+    console.log('- ticket:', req.body.ticket);
+    console.log('- contact:', req.body.contact);
+    console.log('- from:', req.body.from);
+    console.log('- phone:', req.body.phone);
+    console.log('- type:', req.body.type);
+    console.log('- action:', req.body.action);
+    console.log('- event:', req.body.event);
+  }
+  
+  console.log('========================================\n\n');
+  
+  // Se for POST, continua para o handler normal
+  if (req.method === 'POST') {
+    next();
+  } else {
+    // Para outros métodos, retorna sucesso
+    res.json({ 
+      status: 'received', 
+      method: req.method,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 // 🧪 Endpoint de teste para simular webhooks do Whaticket
 app.post('/webhook/test', async (req, res) => {
