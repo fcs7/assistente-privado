@@ -13,7 +13,10 @@
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f app",
     "health": "curl -s http://localhost:3000/health | jq .",
-    "generate-secrets": "./generate-secrets.sh"
+    "generate-secrets": "./generate-secrets.sh",
+    "install-ubuntu": "./install-ubuntu.sh",
+    "quick-start": "./quick-start.sh",
+    "check-system": "./check-system.sh"
   },
   "keywords": [
     "openai",

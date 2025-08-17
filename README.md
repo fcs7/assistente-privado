@@ -22,18 +22,32 @@ Sistema completo de assistente virtual que integra OpenAI Assistant API, WHMCS e
 
 ## 🔧 Instalação
 
-### 1. Clone o repositório
+### 🚀 Ubuntu LTS (Instalação Automática)
+**Para Ubuntu 18.04, 20.04, 22.04 ou 24.04:**
+
+```bash
+git clone https://github.com/seu-usuario/assistente-privado.git
+cd assistente-privado
+./install-ubuntu.sh
+./quick-start.sh
+```
+
+**📘 Ver guia completo**: [README-UBUNTU.md](README-UBUNTU.md)
+
+### 🔧 Instalação Manual (Outras Distros)
+
+#### 1. Clone o repositório
 ```bash
 git clone https://github.com/seu-usuario/assistente-privado.git
 cd assistente-privado
 ```
 
-### 2. Instale as dependências
+#### 2. Instale as dependências
 ```bash
 npm install
 ```
 
-### 3. Configure as variáveis de ambiente
+#### 3. Configure as variáveis de ambiente
 ```bash
 cp .env.example .env
 nano .env
