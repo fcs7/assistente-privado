@@ -155,9 +155,39 @@ WHATICKET_URL=https://api-atendimento.ntweb.com.br
 # Token de autenticação
 WHATICKET_TOKEN=seu_bearer_token_aqui
 
-# Secret para webhooks (crie uma string aleatória forte)
-WEBHOOK_SECRET=sua_chave_secreta_forte_aqui_xyz123
+# Secret para webhooks - USE O GERADOR SEGURO!
+WEBHOOK_SECRET=gere_com_npm_run_generate-secrets
 ```
+
+## 🔐 Segurança e Tokens
+
+### Gerando Tokens Seguros com pwgen
+
+**OBRIGATÓRIO**: Use tokens criptograficamente seguros!
+
+```bash
+# Gerar novos tokens seguros
+npm run generate-secrets
+
+# Saída exemplo:
+# WEBHOOK_SECRET=Tn6RRfy4YLB1KvQKnGlLiAklPA6x1YeJ
+# API_KEY_BACKUP=nijN8DxnHeg3mbTWjI9bVdUoJ1V7oCKK...
+# (e outros tokens)
+```
+
+### Configuração Segura
+
+1. **Execute o gerador**: `npm run generate-secrets`
+2. **Copie os tokens** para seu `.env`
+3. **Configure no WhaTicket**: Use o mesmo `WEBHOOK_SECRET`
+4. **Salve em local seguro**: Tokens não podem ser recuperados
+
+### ⚠️ Importante
+
+- ✅ Tokens são únicos a cada geração
+- ✅ Use pwgen para máxima segurança
+- ✅ Configure WEBHOOK_SECRET em ambos os lados
+- ❌ Nunca use senhas simples ou previsíveis
 
 ## 🚀 Executando o Sistema
 
@@ -183,13 +213,14 @@ docker-compose up -d
 
 ### ⚡ Scripts Disponíveis
 ```bash
-npm run dev          # Desenvolvimento com ts-node
-npm run build        # Compilar TypeScript  
-npm start            # Executar versão compilada
-npm run start:simple # Executar versão simplificada
-npm run health       # Verificar saúde do sistema
-npm run docker:up    # Subir com Docker
-npm run docker:logs  # Ver logs do Docker
+npm run dev             # Desenvolvimento com ts-node
+npm run build           # Compilar TypeScript  
+npm start               # Executar versão compilada
+npm run start:simple    # Executar versão simplificada
+npm run health          # Verificar saúde do sistema
+npm run generate-secrets # Gerar tokens seguros
+npm run docker:up       # Subir com Docker
+npm run docker:logs     # Ver logs do Docker
 ```
 
 ## 📱 Configurando Webhook no WhaTicket
