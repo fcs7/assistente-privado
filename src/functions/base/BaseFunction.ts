@@ -212,11 +212,11 @@ export abstract class BaseFunction implements IBaseFunction {
       'Pending': '🟡',
       'Suspended': '🟠',
       'Terminated': '🔴',
-      'Cancelled': '⚫',
+      'ServiceCancelled': '⚫',
       'Fraud': '🚫',
       
       // Ticket statuses
-      'Open': '🟡',
+      'TicketOpen': '🟡',
       'Answered': '🔵',
       'Customer-Reply': '🟠',
       'Closed': '✅',

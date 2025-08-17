@@ -109,7 +109,7 @@ export function validateWHMCSResponse<T>(response: any): WHMCSApiResponse<T> {
     numreturned: z.number().optional()
   }).passthrough(); // Permite campos adicionais
   
-  return schema.parse(response);
+  return schema.parse(response) as WHMCSApiResponse<T>;
 }
 
 export function validateEmail(email: string): boolean {

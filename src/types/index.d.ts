@@ -148,25 +148,25 @@ export interface WhatsAppMessage {
 }
 
 export interface WhaTicketWebhook {
-  event: string;
+  event?: string;
   ticket?: {
-    id: number;
-    contact: {
-      number: string;
-      name: string;
+    id?: number;
+    contact?: {
+      number?: string;
+      name?: string;
     };
-    whatsapp: {
-      id: number;
-      name: string;
+    whatsapp?: {
+      id?: number;
+      name?: string;
     };
   };
   message?: {
-    id: string;
-    body: string;
-    fromMe: boolean;
+    id?: string;
+    body?: string;
+    fromMe?: boolean;
     mediaType?: string;
     mediaUrl?: string;
-    timestamp: number;
+    timestamp?: number;
   };
 }
 
@@ -260,7 +260,13 @@ export interface LogContext {
   errorMessage?: string;
   errorResponse?: any;
   status?: string;
+  statusText?: string;
+  data?: any;
   domain?: string;
+  port?: number;
+  env?: string;
+  functions?: number;
+  functionsCount?: number;
   identifier?: string;
   subject?: string;
   priority?: string;

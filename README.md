@@ -161,20 +161,35 @@ WEBHOOK_SECRET=sua_chave_secreta_forte_aqui_xyz123
 
 ## 🚀 Executando o Sistema
 
-### Desenvolvimento (com hot reload)
+### Opção 1: Versão Completa TypeScript (Recomendada)
 ```bash
+# Desenvolvimento com hot reload
 npm run dev
+
+# Produção (compilar + executar)
+npm run build && npm start
 ```
 
-### Produção
+### Opção 2: Versão Simplificada JavaScript
 ```bash
-npm run build
-npm start
+# Versão simples para testes rápidos
+npm run start:simple
 ```
 
-### Com Docker (quando resolver o problema do Docker)
+### Opção 3: Docker (quando disponível)
 ```bash
 docker-compose up -d
+```
+
+### ⚡ Scripts Disponíveis
+```bash
+npm run dev          # Desenvolvimento com ts-node
+npm run build        # Compilar TypeScript  
+npm start            # Executar versão compilada
+npm run start:simple # Executar versão simplificada
+npm run health       # Verificar saúde do sistema
+npm run docker:up    # Subir com Docker
+npm run docker:logs  # Ver logs do Docker
 ```
 
 ## 📱 Configurando Webhook no WhaTicket
@@ -258,17 +273,51 @@ FunctionFactory.register('minha_nova_funcao', () => new MinhaNovaFuncao());
 
 ## 🐛 Troubleshooting
 
-### Redis não conecta
-- O sistema usa cache em memória como fallback
-- Para usar Redis: `sudo systemctl start redis`
+### ❌ Compilação TypeScript falha
+```bash
+# Solução: Use versão simplificada
+npm run start:simple
 
-### Docker não inicia
-- Problema conhecido no Arch Linux com iptables
-- Use desenvolvimento local: `npm run dev`
+# Ou força rebuild
+rm -rf dist node_modules && npm install && npm run build
+```
 
-### TypeScript errors
-- Use o quick test: `node quick-test.js`
-- Ou desabilite strict mode temporariamente
+### ⚠️ Redis não conecta
+- ✅ **Normal**: O sistema usa cache em memória como fallback
+- Para ativar Redis: `sudo systemctl start redis` 
+- Não há problema funcional, apenas performance
+
+### 🐳 Docker não inicia
+- **Arch Linux**: Problema com iptables/netfilter
+- **Solução**: Use `npm run dev` (funciona perfeitamente)
+- **Alternativa**: `sudo modprobe iptable_nat && sudo systemctl start docker`
+
+### 🔑 OpenAI Assistant não responde
+1. Verifique se `OPENAI_API_KEY` está correta
+2. Confirme se `OPENAI_ASSISTANT_ID` existe
+3. Teste com: `curl http://localhost:3000/health`
+
+### 📱 WhatsApp não recebe respostas
+1. Confirme webhook no WhaTicket: `http://SEU-SERVIDOR:3000/webhook`
+2. Verifique `WHATICKET_TOKEN` nas configurações
+3. Teste webhook: `curl -X POST http://localhost:3000/webhook -d '{"message":{"body":"teste"}}'`
+
+### 💾 WHMCS não encontra dados
+1. Confirme `WHMCS_API_URL` termina com `/includes/api.php`
+2. Verifique credenciais `WHMCS_IDENTIFIER` e `WHMCS_SECRET`
+3. Teste uma função: `GET http://localhost:3000/functions`
+
+### 🔧 Sistema lento ou erros
+```bash
+# Verificar logs
+npm run dev  # Logs em tempo real
+
+# Verificar saúde
+npm run health
+
+# Restart completo
+pkill node && npm run dev
+```
 
 ## 📝 Variáveis de Ambiente
 

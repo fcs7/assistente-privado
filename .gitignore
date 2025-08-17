@@ -79,6 +79,7 @@ pnpm-lock.yaml
 # Test files  
 test-*.js
 quick-test.js
+start.js
 
 # Documentation build
 docs/_build/

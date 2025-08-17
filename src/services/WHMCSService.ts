@@ -87,7 +87,7 @@ export class WHMCSService {
     } catch (error) {
       if (error instanceof AxiosError) {
         this.logger.error(`WHMCS API call failed: ${action}`, error, {
-          status: error.response?.status,
+          status: error.response?.status?.toString(),
           statusText: error.response?.statusText,
           data: error.response?.data
         });

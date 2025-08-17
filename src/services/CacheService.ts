@@ -14,23 +14,31 @@ export class CacheService {
     
     try {
       this.redis = new Redis(config.redis.url, {
-        retryDelayOnFailover: 100,
-        maxRetriesPerRequest: 3,
+        retryStrategy: (times: number) => {
+          if (times > 3) {
+            this.logger.warn('⚠️ Redis indisponível - usando cache em memória');
+            return null; // Para de tentar
+          }
+          return Math.min(times * 200, 1000);
+        },
+        maxRetriesPerRequest: 1,
         lazyConnect: true,
         keepAlive: 30000,
         family: 4, // IPv4
-        reconnectOnError: (err) => {
-          const targetError = 'READONLY';
-          return err.message.includes(targetError);
-        }
+        enableOfflineQueue: false,
+        reconnectOnError: () => false
       });
       
       this.redis.on('connect', () => {
         this.logger.info('✅ Conectado ao Redis');
       });
       
+      let errorLogged = false;
       this.redis.on('error', (error) => {
-        this.logger.error('❌ Erro no Redis', error);
+        if (!errorLogged && !error.message.includes('ECONNREFUSED')) {
+          this.logger.warn('⚠️ Redis não disponível - usando fallback em memória');
+          errorLogged = true;
+        }
       });
       
       this.redis.on('ready', () => {

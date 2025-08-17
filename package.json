@@ -7,10 +7,12 @@
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "start:simple": "node run.js",
     "test": "echo \"Testes serão implementados\"",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f app"
+    "docker:logs": "docker-compose logs -f app",
+    "health": "curl -s http://localhost:3000/health | jq ."
   },
   "keywords": [
     "openai",
