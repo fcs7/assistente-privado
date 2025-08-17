@@ -1,0 +1,48 @@
+{
+  "name": "whmcs-assistant",
+  "version": "1.0.0",
+  "description": "Assistente IA que integra OpenAI Assistant API + WHMCS + WhaTicket (WhatsApp)",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "echo \"Testes serão implementados\"",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f app"
+  },
+  "keywords": [
+    "openai",
+    "assistant",
+    "whmcs",
+    "whatsapp",
+    "webhook",
+    "typescript",
+    "factory-pattern"
+  ],
+  "author": "Assistente WHMCS",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "openai": "^4.58.0",
+    "axios": "^1.7.2",
+    "ioredis": "^5.4.1",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8",
+    "pino": "^9.2.0",
+    "pino-pretty": "^11.2.1",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "@types/cors": "^2.8.17",
+    "typescript": "^5.5.3",
+    "nodemon": "^3.1.4",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

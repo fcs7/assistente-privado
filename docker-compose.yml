@@ -1,0 +1,134 @@
+services:
+  # 🤖 WHMCS Assistant Application
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_ASSISTANT_ID=${OPENAI_ASSISTANT_ID}
+      - OPENAI_ORGANIZATION_ID=${OPENAI_ORGANIZATION_ID}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo-preview}
+      
+      # WHMCS Configuration
+      - WHMCS_API_URL=${WHMCS_API_URL}
+      - WHMCS_IDENTIFIER=${WHMCS_IDENTIFIER}
+      - WHMCS_SECRET=${WHMCS_SECRET}
+      
+      # WhaTicket Configuration
+      - WHATICKET_URL=${WHATICKET_URL}
+      - WHATICKET_TOKEN=${WHATICKET_TOKEN}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-whmcs-assistant-secret}
+      
+      # Infrastructure
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://whmcs_user:whmcs_pass@postgres:5432/whmcs_assistant
+      
+      # Application
+      - NODE_ENV=production
+      - PORT=3000
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - whmcs-network
+
+  # 🔴 Redis Cache
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whmcs-network
+
+  # 🐘 PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: whmcs_assistant
+      POSTGRES_USER: whmcs_user
+      POSTGRES_PASSWORD: whmcs_pass
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whmcs_user -d whmcs_assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whmcs-network
+
+  # 📊 Redis Commander (Opcional - para desenvolvimento)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=redis123
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    profiles:
+      - dev
+    networks:
+      - whmcs-network
+
+  # 🗄️ pgAdmin (Opcional - para desenvolvimento)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@whmcs.local
+      PGADMIN_DEFAULT_PASSWORD: pgadmin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - dev
+    networks:
+      - whmcs-network
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  pgadmin-data:
+    driver: local
+
+networks:
+  whmcs-network:
+    driver: bridge

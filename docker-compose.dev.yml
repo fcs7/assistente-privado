@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # 🤖 WHMCS Assistant - Development Mode
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Para desenvolvimento, usar stage de build
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_ASSISTANT_ID=${OPENAI_ASSISTANT_ID}
+      - OPENAI_ORGANIZATION_ID=${OPENAI_ORGANIZATION_ID}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-turbo-preview}
+      
+      # WHMCS Configuration
+      - WHMCS_API_URL=${WHMCS_API_URL}
+      - WHMCS_IDENTIFIER=${WHMCS_IDENTIFIER}
+      - WHMCS_SECRET=${WHMCS_SECRET}
+      
+      # WhaTicket Configuration
+      - WHATICKET_URL=${WHATICKET_URL}
+      - WHATICKET_TOKEN=${WHATICKET_TOKEN}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-dev-secret-123}
+      
+      # Infrastructure
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://whmcs_user:whmcs_pass@postgres:5432/whmcs_assistant
+      
+      # Application
+      - NODE_ENV=development
+      - PORT=3000
+      - LOG_LEVEL=debug
+    volumes:
+      # Volume mount para hot reload
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - ./tsconfig.json:/app/tsconfig.json
+      - node_modules:/app/node_modules
+    command: ["npm", "run", "dev"]  # Usar nodemon para hot reload
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - whmcs-dev-network
+
+  # 🔴 Redis Cache
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-dev-data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whmcs-dev-network
+
+  # 🐘 PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: whmcs_assistant
+      POSTGRES_USER: whmcs_user
+      POSTGRES_PASSWORD: whmcs_pass
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whmcs_user -d whmcs_assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - whmcs-dev-network
+
+  # 📊 Redis Commander
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=dev123
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - whmcs-dev-network
+
+  # 🗄️ pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@whmcs-dev.local
+      PGADMIN_DEFAULT_PASSWORD: dev123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin-dev-data:/var/lib/pgadmin
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - whmcs-dev-network
+
+  # 🔍 Webhook Testing Tool (RequestBin-like)
+  webhook-tester:
+    image: tarampampam/webhook-tester:latest
+    ports:
+      - "8082:8080"
+    environment:
+      - LISTEN_ADDR=0.0.0.0
+      - LISTEN_PORT=8080
+    restart: unless-stopped
+    networks:
+      - whmcs-dev-network
+
+volumes:
+  redis-dev-data:
+    driver: local
+  postgres-dev-data:
+    driver: local
+  pgadmin-dev-data:
+    driver: local
+  node_modules:
+    driver: local
+
+networks:
+  whmcs-dev-network:
+    driver: bridge
